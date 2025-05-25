@@ -1,0 +1,36 @@
+/* App.css - Estilos principales de la aplicación */
+
+.App {
+  /* Centra el contenido horizontalmente */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  /* Asegura que ocupe toda la altura de la ventana */
+  min-height: 100vh;
+
+  /* Centra también verticalmente si es necesario */
+  justify-content: flex-start;
+
+  /* Ancho completo para que el Layout pueda usar todo el espacio */
+  width: 100%;
+
+  /* Fondo base que combine con tu paleta de colores */
+  background: linear-gradient(135deg, #fef7ed 0%, #fed7aa 100%);
+}
+
+/* Opcional: Si quieres centrar también verticalmente el contenido completo */
+.App.centerVertically {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Asegura que los elementos hijos mantengan el ancho adecuado */
+.App > * {
+  width: 100%;
+  max-width: 100%;
+}
