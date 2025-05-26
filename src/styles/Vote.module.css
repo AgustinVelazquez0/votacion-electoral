@@ -6,9 +6,7 @@
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   margin-left: auto;
   margin-right: auto;
-
-  /* overflow-y: auto;  ✅ Esto habilita el scroll vertical si hay overflow */
-  /* max-height: 100vh;  ✅ Esto limita la altura al 100% de la pantalla */
+  border-radius: 8px;
 }
 
 .loading {

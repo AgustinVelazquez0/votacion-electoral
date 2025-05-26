@@ -1,6 +1,10 @@
-/* index.css - Versión Responsiva y Optimizada */
+/* index.css - Versión Responsiva y Optimizada - Sin Conflictos */
 
-:root {
+* {
+  box-sizing: border-box;
+}
+
+html {
   /* Variables CSS para consistencia */
   --primary-color: #646cff;
   --primary-hover: #535bf2;
@@ -18,8 +22,6 @@
   /* Configuración base del documento */
   height: 100%;
   width: 100%;
-  display: flex;
-  flex-direction: column;
 
   /* Tipografía responsiva */
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
@@ -66,14 +68,14 @@ a:focus-visible {
 
 body {
   margin: 0;
-  padding: clamp(0.5rem, 2vw, 1rem);
-  display: block; /* o si necesitás flex, usalo con cuidado */
+  padding: 0; /* CAMBIO CRÍTICO: Sin padding que cause overflow */
   min-width: 20rem;
   min-height: 100vh;
   min-height: 100svh;
-  overflow-x: hidden;
+  overflow-x: hidden; /* Prevenir scroll horizontal */
   scroll-behavior: smooth;
   box-sizing: border-box;
+  width: 100%; /* AÑADIDO: Asegurar que body ocupe todo el ancho */
 }
 
 /* Encabezados responsivos */
@@ -143,6 +145,10 @@ button {
   /* Mejores interacciones táctiles */
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+
+  /* AÑADIDO: Prevenir overflow en botones */
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 button:hover:not(:disabled) {
@@ -182,6 +188,8 @@ select {
   min-height: var(--min-touch-target);
   box-sizing: border-box;
   transition: border-color var(--transition-speed) ease;
+  width: 100%; /* AÑADIDO: Prevenir overflow */
+  max-width: 100%; /* AÑADIDO: Prevenir overflow */
 }
 
 input:focus,
@@ -197,10 +205,10 @@ main,
 section,
 article {
   width: 100%;
-  max-width: 75rem; /* 1200px */
   margin: 0 auto;
   padding: clamp(1rem, 4vw, 2rem);
   box-sizing: border-box;
+  max-width: 100%; /* AÑADIDO: Prevenir overflow */
 }
 
 /* Utilidades responsivas */
@@ -246,7 +254,7 @@ article {
 
 /* Tema claro con mejores variables */
 @media (prefers-color-scheme: light) {
-  :root {
+  html {
     color: var(--text-dark);
     background-color: var(--bg-light);
   }
@@ -274,13 +282,14 @@ article {
 
 /* Mejoras para dispositivos móviles */
 @media (max-width: 48rem) {
-  body {
+  main,
+  section,
+  article {
     padding: clamp(0.75rem, 3vw, 1.25rem);
   }
 
   button {
-    width: 100%;
-    max-width: 20rem;
+    max-width: 100%; /* CAMBIADO: Era width: 100% que causaba problemas */
   }
 
   /* Asegurar que los elementos interactivos sean táctiles */
@@ -295,11 +304,13 @@ article {
 
 /* Mejoras para pantallas muy pequeñas */
 @media (max-width: 30rem) {
-  :root {
+  html {
     font-size: 0.875rem;
   }
 
-  body {
+  main,
+  section,
+  article {
     padding: 1rem;
   }
 
@@ -327,7 +338,7 @@ article {
 
 /* Soporte para modo de alto contraste */
 @media (prefers-contrast: high) {
-  :root {
+  html {
     --primary-color: #0066cc;
     --primary-hover: #0052a3;
   }
@@ -359,4 +370,28 @@ article {
   button {
     display: none;
   }
+}
+
+/* AÑADIDO: Reset adicional para prevenir overflows */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* AÑADIDO: Asegurar que imágenes y media no causen overflow */
+img,
+video,
+iframe,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* AÑADIDO: Prevenir overflow de texto largo */
+pre,
+code {
+  overflow-x: auto;
+  word-wrap: break-word;
 }

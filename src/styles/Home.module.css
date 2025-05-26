@@ -5,6 +5,7 @@
   background: linear-gradient(135deg, #1e3a5f 0%, #2c5aa0 50%, #1a2332 100%);
   padding: clamp(1rem, 4vw, 2rem);
   position: relative;
+  border-radius: 8px;
 }
 
 .container::before {
@@ -35,7 +36,7 @@
 /* Tarjeta principal de bienvenida */
 .card {
   background: #ffffff;
-  border-radius: 1rem;
+  border-radius: 0.5rem;
   box-shadow: 0 1.25rem 2.5rem rgba(30, 58, 95, 0.15),
     0 0.5rem 1rem rgba(30, 58, 95, 0.1);
   padding: clamp(2rem, 6vw, 3rem) clamp(1.5rem, 5vw, 2.5rem);
@@ -213,6 +214,7 @@
   flex: 1;
   min-width: 17.5rem;
   max-width: 20rem;
+  width: 80%;
 }
 
 .statCard:hover {
@@ -431,14 +433,6 @@
 
 /* Media Queries para ajustes específicos */
 @media (max-width: 48rem) {
-  .container {
-    margin-top: 80vh;
-  }
-
-  .card {
-    margin-top: 25vh;
-  }
-
   .gridStats {
     flex-direction: column;
     align-items: center;
@@ -447,7 +441,6 @@
   .statCard {
     min-width: auto;
     max-width: 100%;
-    width: 100%;
   }
 
   .gridInfo {
@@ -466,7 +459,6 @@
   .actionLink {
     min-width: auto;
     max-width: 100%;
-    width: 100%;
   }
 }
 
