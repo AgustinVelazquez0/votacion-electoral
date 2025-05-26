@@ -18,11 +18,11 @@ interface VotingState {
   error: string | null;
   hasVoted: boolean;
   votes: Vote[];
-  // Nuevos estados para mejorar UX
   isLoading: boolean;
   votingAttempts: number;
   sessionExpired: boolean;
   registeredUsers: AuthUser[];
+  isInitialized: boolean;
 }
 
 type VotingAction =
@@ -40,7 +40,8 @@ type VotingAction =
   | { type: "CLEAR_ERROR" }
   | { type: "INCREMENT_ATTEMPTS" }
   | { type: "RESET_ATTEMPTS" }
-  | { type: "SESSION_EXPIRED" };
+  | { type: "SESSION_EXPIRED" }
+  | { type: "INITIALIZE_COMPLETE" };
 
 const initialState: VotingState = {
   user: null,
@@ -54,6 +55,7 @@ const initialState: VotingState = {
   votingAttempts: 0,
   sessionExpired: false,
   registeredUsers: [],
+  isInitialized: false,
 };
 
 function votingReducer(state: VotingState, action: VotingAction): VotingState {
@@ -68,6 +70,7 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
         error: null,
         votingAttempts: 0,
         sessionExpired: false,
+        isLoading: false,
       };
 
     case "REGISTER_SUCCESS":
@@ -78,13 +81,16 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
         error: null,
         votingAttempts: 0,
         sessionExpired: false,
+        isLoading: false,
       };
 
     case "LOGOUT":
       return {
         ...initialState,
         currentSession: state.currentSession,
-        registeredUsers: state.registeredUsers, // Mantener usuarios registrados
+        registeredUsers: state.registeredUsers,
+        isInitialized: true,
+        isLoading: false,
       };
 
     case "SET_SESSION":
@@ -163,6 +169,13 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
         error: "Su sesión ha expirado. Por favor, inicie sesión nuevamente.",
       };
 
+    case "INITIALIZE_COMPLETE":
+      return {
+        ...state,
+        isInitialized: true,
+        isLoading: false,
+      };
+
     default:
       return state;
   }
@@ -175,20 +188,74 @@ interface VotingProviderProps {
 export function VotingProvider({ children }: VotingProviderProps) {
   const [state, dispatch] = useReducer(votingReducer, initialState);
 
-  // Simulamos la carga inicial de la sesión
+  // Inicialización de la sesión
   useEffect(() => {
-    dispatch({ type: "SET_LOADING", payload: true });
+    const initializeSession = async () => {
+      try {
+        // Simular delay de API
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Simular carga asíncrona
-    const timer = setTimeout(() => {
-      dispatch({ type: "SET_SESSION", payload: mockSession });
-      dispatch({ type: "SET_LOADING", payload: false });
-    }, 1000);
+        // 🔧 SOLUCIÓN: Crear una sesión con fechas válidas
+        const currentSession = {
+          ...mockSession,
+          startDate: new Date(), // Fecha actual
+          endDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 horas desde ahora
+          isActive: true,
+        };
 
-    return () => clearTimeout(timer);
+        console.log("📅 Sesión creada:", {
+          start: currentSession.startDate,
+          end: currentSession.endDate,
+          isActive: currentSession.isActive,
+        });
+
+        dispatch({ type: "SET_SESSION", payload: currentSession });
+      } catch (error) {
+        console.error("Error cargando sesión:", error);
+        dispatch({
+          type: "SET_ERROR",
+          payload: "Error al cargar la sesión de votación",
+        });
+      }
+    };
+
+    initializeSession();
   }, []);
 
-  // Validación de credenciales mejorada
+  // Restaurar usuario desde localStorage
+  useEffect(() => {
+    const restoreUser = () => {
+      try {
+        const storedUser = localStorage.getItem("authUser");
+        console.log(
+          "🔍 Verificando localStorage para usuario:",
+          storedUser ? "encontrado" : "no encontrado"
+        );
+
+        if (storedUser) {
+          const parsedUser: AuthUser = JSON.parse(storedUser);
+          console.log("📋 Usuario parseado:", parsedUser);
+
+          if (parsedUser && parsedUser.dni && parsedUser.isAuthenticated) {
+            dispatch({ type: "LOGIN_SUCCESS", payload: parsedUser });
+            console.log("✅ Usuario restaurado exitosamente:", parsedUser.name);
+          } else {
+            console.log("❌ Usuario inválido, limpiando localStorage");
+            localStorage.removeItem("authUser");
+          }
+        }
+      } catch (e) {
+        console.error("❌ Error al parsear usuario desde localStorage:", e);
+        localStorage.removeItem("authUser");
+      } finally {
+        dispatch({ type: "INITIALIZE_COMPLETE" });
+      }
+    };
+
+    restoreUser();
+  }, []);
+
+  // Validación de credenciales
   const validateCredentials = useCallback(
     (dni: string, password: string): ValidationResult => {
       const errors: string[] = [];
@@ -242,7 +309,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Validar que el nombre y email no estén vacíos y el email tenga formato básico
+      // Validar nombre y email
       if (!name || name.trim().length < 3) {
         dispatch({
           type: "SET_ERROR",
@@ -257,15 +324,14 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Simular llamada backend con delay
+      // Simular llamada backend
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Recuperar lista de usuarios guardados
+      // Verificar usuarios existentes
       const users: AuthUser[] = JSON.parse(
         localStorage.getItem("users") || "[]"
       );
 
-      // Verificar si ya existe usuario con ese DNI
       const dniExists = users.some((user) => user.dni === dni);
 
       if (dniExists) {
@@ -287,14 +353,17 @@ export function VotingProvider({ children }: VotingProviderProps) {
         lastLogin: new Date(),
       };
 
-      // Guardar nuevo usuario en array y actualizar localStorage
+      // Guardar usuario
       users.push(newUser);
       localStorage.setItem("users", JSON.stringify(users));
 
-      // Guardar sesión activa (loguear al usuario directamente)
-      localStorage.setItem("authUser", JSON.stringify(newUser));
-      dispatch({ type: "REGISTER_SUCCESS", payload: newUser });
+      try {
+        localStorage.setItem("authUser", JSON.stringify(newUser));
+      } catch (e) {
+        console.error("Error al guardar en localStorage:", e);
+      }
 
+      dispatch({ type: "REGISTER_SUCCESS", payload: newUser });
       console.log("✅ Registro exitoso:", newUser);
 
       return true;
@@ -326,15 +395,14 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Simular llamada al backend con delay realista
+      // Simular llamada al backend
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Recuperar usuarios guardados
+      // Recuperar usuarios
       const users: AuthUser[] = JSON.parse(
         localStorage.getItem("users") || "[]"
       );
 
-      // Buscar usuario con ese DNI
       const foundUser = users.find((user) => user.dni === dni);
 
       if (!foundUser) {
@@ -347,14 +415,24 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Aquí podrías validar la contraseña con foundUser.password si la guardás
-      // (Por simplicidad lo obviamos, pero sería bueno implementarlo)
-
-      // Actualizar lastLogin
+      // Actualizar usuario
       foundUser.lastLogin = new Date();
+      foundUser.isAuthenticated = true;
 
-      // Guardar usuario logueado
-      localStorage.setItem("authUser", JSON.stringify(foundUser));
+      const updatedUsers = users.map((u) => (u.dni === dni ? foundUser : u));
+      localStorage.setItem("users", JSON.stringify(updatedUsers));
+
+      try {
+        localStorage.setItem("authUser", JSON.stringify(foundUser));
+      } catch (e) {
+        console.error("Error al guardar en localStorage:", e);
+        dispatch({
+          type: "SET_ERROR",
+          payload: "Error al guardar la sesión. Intente nuevamente.",
+        });
+        return false;
+      }
+
       dispatch({ type: "LOGIN_SUCCESS", payload: foundUser });
 
       // Simular si ya votó (30%)
@@ -364,7 +442,6 @@ export function VotingProvider({ children }: VotingProviderProps) {
       }
 
       console.log("✅ Login exitoso:", foundUser);
-
       return true;
     } catch (error) {
       console.error("Error en login:", error);
@@ -379,8 +456,13 @@ export function VotingProvider({ children }: VotingProviderProps) {
   };
 
   const logout = useCallback(() => {
-    dispatch({ type: "LOGOUT" });
-    localStorage.removeItem("authUser");
+    try {
+      localStorage.removeItem("authUser");
+      dispatch({ type: "LOGOUT" });
+      console.log("✅ Logout exitoso");
+    } catch (e) {
+      console.error("Error durante logout:", e);
+    }
   }, []);
 
   const selectCandidate = useCallback(
@@ -439,7 +521,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
     dispatch({ type: "VOTE_START" });
 
     try {
-      // Simular procesamiento de voto con delay realista
+      // Simular procesamiento de voto
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Simulamos éxito del 95% del tiempo
@@ -485,33 +567,65 @@ export function VotingProvider({ children }: VotingProviderProps) {
     dispatch({ type: "CLEAR_ERROR" });
   }, []);
 
-  // Verificar expiración de sesión
+  // 🔧 SOLUCIÓN: Verificar expiración de sesión solo cuando todo esté inicializado
   useEffect(() => {
-    if (state.user && state.currentSession) {
-      const checkSessionExpiry = () => {
-        const now = new Date();
-        if (now > state.currentSession!.endDate) {
-          dispatch({ type: "SESSION_EXPIRED" });
-        }
-      };
-
-      const interval = setInterval(checkSessionExpiry, 60000); // Verificar cada minuto
-      return () => clearInterval(interval);
+    // Solo ejecutar si tenemos usuario, sesión y está inicializado
+    if (!state.user || !state.currentSession || !state.isInitialized) {
+      return;
     }
-  }, [state.user, state.currentSession]);
 
-  // 🟨 Cargar usuario desde localStorage si existe
-  useEffect(() => {
-    const storedUser = localStorage.getItem("authUser");
-    if (storedUser) {
-      try {
-        const parsedUser: AuthUser = JSON.parse(storedUser);
-        dispatch({ type: "LOGIN_SUCCESS", payload: parsedUser });
-      } catch (e) {
-        console.error("Error al parsear usuario desde localStorage", e);
+    console.log("🔍 Verificando expiración de sesión:", {
+      currentTime: new Date(),
+      sessionEnd: state.currentSession.endDate,
+      isActive: state.currentSession.isActive,
+    });
+
+    const checkSessionExpiry = () => {
+      const now = new Date();
+      const sessionEnd = new Date(state.currentSession!.endDate);
+
+      if (now > sessionEnd || !state.currentSession!.isActive) {
+        console.log("⚠️ Sesión expirada o inactiva");
+        dispatch({ type: "SESSION_EXPIRED" });
+        localStorage.removeItem("authUser");
+      } else {
+        console.log(
+          "✅ Sesión válida, tiempo restante:",
+          Math.round((sessionEnd.getTime() - now.getTime()) / 1000 / 60),
+          "minutos"
+        );
       }
-    }
-  }, []);
+    };
+
+    // Verificar inmediatamente
+    checkSessionExpiry();
+
+    // Verificar cada 5 minutos (más eficiente)
+    const interval = setInterval(checkSessionExpiry, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [state.user, state.currentSession, state.isInitialized]);
+
+  // 🔧 Verificar integridad del localStorage - Solo cuando pierde el foco
+  useEffect(() => {
+    if (!state.user || !state.isInitialized) return;
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Cuando la app recupera el foco
+        const storedUser = localStorage.getItem("authUser");
+        if (!storedUser && state.user) {
+          console.log("⚠️ Usuario perdido en localStorage, cerrando sesión");
+          dispatch({ type: "LOGOUT" });
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [state.user, state.isInitialized]);
 
   const contextValue: VotingContextType = {
     user: state.user,
