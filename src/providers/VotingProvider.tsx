@@ -260,8 +260,13 @@ export function VotingProvider({ children }: VotingProviderProps) {
       // Simular llamada backend con delay
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Simular que el dni ya está registrado
-      const dniExists = state.registeredUsers.some((user) => user.dni === dni);
+      // Recuperar lista de usuarios guardados
+      const users: AuthUser[] = JSON.parse(
+        localStorage.getItem("users") || "[]"
+      );
+
+      // Verificar si ya existe usuario con ese DNI
+      const dniExists = users.some((user) => user.dni === dni);
 
       if (dniExists) {
         dispatch({
@@ -271,7 +276,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Simular registro exitoso
+      // Crear nuevo usuario
       const newUser: AuthUser = {
         id: parseInt(dni.slice(-4)),
         name,
@@ -282,7 +287,15 @@ export function VotingProvider({ children }: VotingProviderProps) {
         lastLogin: new Date(),
       };
 
+      // Guardar nuevo usuario en array y actualizar localStorage
+      users.push(newUser);
+      localStorage.setItem("users", JSON.stringify(users));
+
+      // Guardar sesión activa (loguear al usuario directamente)
+      localStorage.setItem("authUser", JSON.stringify(newUser));
       dispatch({ type: "REGISTER_SUCCESS", payload: newUser });
+
+      console.log("✅ Registro exitoso:", newUser);
 
       return true;
     } catch (error) {
@@ -316,31 +329,15 @@ export function VotingProvider({ children }: VotingProviderProps) {
       // Simular llamada al backend con delay realista
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Simulamos diferentes escenarios de autenticación
-      const loginSuccess = Math.random() > 0.1; // 90% de éxito
+      // Recuperar usuarios guardados
+      const users: AuthUser[] = JSON.parse(
+        localStorage.getItem("users") || "[]"
+      );
 
-      if (loginSuccess) {
-        const mockUser: AuthUser = {
-          id: parseInt(dni.slice(-4)), // Usar últimos 4 dígitos como ID
-          name: "Usuario de Prueba",
-          email: `usuario${dni.slice(-3)}@ejemplo.com`,
-          dni: dni,
-          isAuthenticated: true,
-          role: "voter",
-          lastLogin: new Date(),
-        };
+      // Buscar usuario con ese DNI
+      const foundUser = users.find((user) => user.dni === dni);
 
-        // Verificar si ya votó (simulado)
-        const hasAlreadyVoted = Math.random() < 0.3; // 30% ya votó
-
-        dispatch({ type: "LOGIN_SUCCESS", payload: mockUser });
-
-        if (hasAlreadyVoted) {
-          dispatch({ type: "VOTE_SUCCESS" });
-        }
-
-        return true;
-      } else {
+      if (!foundUser) {
         dispatch({
           type: "SET_ERROR",
           payload:
@@ -349,6 +346,26 @@ export function VotingProvider({ children }: VotingProviderProps) {
         dispatch({ type: "INCREMENT_ATTEMPTS" });
         return false;
       }
+
+      // Aquí podrías validar la contraseña con foundUser.password si la guardás
+      // (Por simplicidad lo obviamos, pero sería bueno implementarlo)
+
+      // Actualizar lastLogin
+      foundUser.lastLogin = new Date();
+
+      // Guardar usuario logueado
+      localStorage.setItem("authUser", JSON.stringify(foundUser));
+      dispatch({ type: "LOGIN_SUCCESS", payload: foundUser });
+
+      // Simular si ya votó (30%)
+      const hasAlreadyVoted = Math.random() < 0.3;
+      if (hasAlreadyVoted) {
+        dispatch({ type: "VOTE_SUCCESS" });
+      }
+
+      console.log("✅ Login exitoso:", foundUser);
+
+      return true;
     } catch (error) {
       console.error("Error en login:", error);
       dispatch({
@@ -363,6 +380,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
 
   const logout = useCallback(() => {
     dispatch({ type: "LOGOUT" });
+    localStorage.removeItem("authUser");
   }, []);
 
   const selectCandidate = useCallback(
@@ -481,6 +499,19 @@ export function VotingProvider({ children }: VotingProviderProps) {
       return () => clearInterval(interval);
     }
   }, [state.user, state.currentSession]);
+
+  // 🟨 Cargar usuario desde localStorage si existe
+  useEffect(() => {
+    const storedUser = localStorage.getItem("authUser");
+    if (storedUser) {
+      try {
+        const parsedUser: AuthUser = JSON.parse(storedUser);
+        dispatch({ type: "LOGIN_SUCCESS", payload: parsedUser });
+      } catch (e) {
+        console.error("Error al parsear usuario desde localStorage", e);
+      }
+    }
+  }, []);
 
   const contextValue: VotingContextType = {
     user: state.user,
