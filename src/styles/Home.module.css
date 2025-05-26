@@ -463,14 +463,6 @@
 }
 
 @media (max-width: 30rem) {
-  .container {
-    margin-top: 60vh;
-  }
-
-  .card {
-    margin-top: 15vh;
-  }
-
   .listItem,
   .listItemIcon {
     align-items: flex-start;
