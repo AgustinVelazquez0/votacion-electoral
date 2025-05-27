@@ -7,8 +7,20 @@ import type {
   Vote,
   ValidationResult,
 } from "../types";
-import { mockSession } from "../data/mockData";
 import { VotingContext } from "../context/VotingContext";
+
+// Configuración de la API
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:3000/api";
+
+interface CandidateData {
+  _id: string;
+  name: string;
+  party: string;
+  image?: string;
+  proposals?: string[];
+  votes?: number;
+}
 
 interface VotingState {
   user: AuthUser | null;
@@ -67,6 +79,7 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
       return {
         ...state,
         user: action.payload,
+        hasVoted: action.payload.hasVoted || false,
         error: null,
         votingAttempts: 0,
         sessionExpired: false,
@@ -78,6 +91,7 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
         ...state,
         registeredUsers: [...state.registeredUsers, action.payload],
         user: action.payload,
+        hasVoted: action.payload.hasVoted || false,
         error: null,
         votingAttempts: 0,
         sessionExpired: false,
@@ -127,6 +141,7 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
         selectedCandidateId: null,
         votingAttempts: 0,
         votes: action.payload ? [...state.votes, action.payload] : state.votes,
+        user: state.user ? { ...state.user, hasVoted: true } : null,
       };
 
     case "VOTE_ERROR":
@@ -181,6 +196,54 @@ function votingReducer(state: VotingState, action: VotingAction): VotingState {
   }
 }
 
+// Utilidad para manejar errores de la API
+const handleApiError = (error: unknown): string => {
+  // Type guard to safely check error properties
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const apiError = error as {
+      response?: { data?: { message?: string } };
+      message?: string;
+    };
+    if (apiError.response?.data?.message) {
+      return apiError.response.data.message;
+    }
+    if (apiError.message === "Network Error") {
+      return "Error de conexión. Verifique su conexión a internet.";
+    }
+    return apiError.message || "Error desconocido del servidor";
+  }
+  return "Error desconocido del servidor";
+};
+
+// Utilidad para realizar peticiones HTTP
+const apiRequest = async (url: string, options: RequestInit = {}) => {
+  const token = localStorage.getItem("authToken");
+
+  const defaultHeaders: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+
+  if (token) {
+    defaultHeaders.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${url}`, {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || `HTTP error! status: ${response.status}`);
+  }
+
+  return data;
+};
+
 interface VotingProviderProps {
   children: ReactNode;
 }
@@ -188,25 +251,45 @@ interface VotingProviderProps {
 export function VotingProvider({ children }: VotingProviderProps) {
   const [state, dispatch] = useReducer(votingReducer, initialState);
 
-  // Inicialización de la sesión
+  // Cargar candidatos y configurar la sesión
   useEffect(() => {
     const initializeSession = async () => {
       try {
-        // Simular delay de API
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        dispatch({ type: "SET_LOADING", payload: true });
 
-        // 🔧 SOLUCIÓN: Crear una sesión con fechas válidas
-        const currentSession = {
-          ...mockSession,
-          startDate: new Date(), // Fecha actual
-          endDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 horas desde ahora
-          isActive: true,
+        // Obtener candidatos del backend
+        const candidatesResponse = await apiRequest("/voting/candidates");
+
+        // Obtener resultados para verificar si hay una elección activa
+        const resultsResponse = await apiRequest("/voting/results");
+
+        // Crear sesión basada en la respuesta del backend
+        const currentSession: VotingSession = {
+          id: resultsResponse.election?._id || "default",
+          title: resultsResponse.election?.title || "Elección General",
+          description: resultsResponse.election?.description || "", // Add this line
+          startDate: resultsResponse.election?.startDate
+            ? new Date(resultsResponse.election.startDate)
+            : new Date(),
+          endDate: resultsResponse.election?.endDate
+            ? new Date(resultsResponse.election.endDate)
+            : new Date(Date.now() + 24 * 60 * 60 * 1000),
+          isActive: resultsResponse.election?.isActive || true,
+          candidates: candidatesResponse.map((candidate: CandidateData) => ({
+            id: candidate._id,
+            name: candidate.name,
+            party: candidate.party,
+            image: candidate.image || "/placeholder-candidate.jpg",
+            proposals: candidate.proposals || [],
+            votes: candidate.votes || 0,
+          })),
+          totalVotes: resultsResponse.totalVotes || 0,
         };
 
-        console.log("📅 Sesión creada:", {
-          start: currentSession.startDate,
-          end: currentSession.endDate,
+        console.log("📅 Sesión creada desde backend:", {
+          candidates: currentSession.candidates.length,
           isActive: currentSession.isActive,
+          totalVotes: currentSession.totalVotes,
         });
 
         dispatch({ type: "SET_SESSION", payload: currentSession });
@@ -214,39 +297,48 @@ export function VotingProvider({ children }: VotingProviderProps) {
         console.error("Error cargando sesión:", error);
         dispatch({
           type: "SET_ERROR",
-          payload: "Error al cargar la sesión de votación",
+          payload: handleApiError(error),
         });
+      } finally {
+        dispatch({ type: "SET_LOADING", payload: false });
       }
     };
 
     initializeSession();
   }, []);
 
-  // Restaurar usuario desde localStorage
+  // Restaurar usuario desde token
   useEffect(() => {
-    const restoreUser = () => {
+    const restoreUser = async () => {
       try {
-        const storedUser = localStorage.getItem("authUser");
+        const storedToken = localStorage.getItem("authToken");
         console.log(
-          "🔍 Verificando localStorage para usuario:",
-          storedUser ? "encontrado" : "no encontrado"
+          "🔍 Verificando token:",
+          storedToken ? "encontrado" : "no encontrado"
         );
 
-        if (storedUser) {
-          const parsedUser: AuthUser = JSON.parse(storedUser);
-          console.log("📋 Usuario parseado:", parsedUser);
+        if (storedToken) {
+          // Verificar el estado del usuario con el backend
+          const userStatus = await apiRequest("/voting/user-status");
 
-          if (parsedUser && parsedUser.dni && parsedUser.isAuthenticated) {
-            dispatch({ type: "LOGIN_SUCCESS", payload: parsedUser });
-            console.log("✅ Usuario restaurado exitosamente:", parsedUser.name);
-          } else {
-            console.log("❌ Usuario inválido, limpiando localStorage");
-            localStorage.removeItem("authUser");
-          }
+          const restoredUser: AuthUser = {
+            id: userStatus._id,
+            name: userStatus.name,
+            email: userStatus.email,
+            dni: userStatus.dni,
+            isAuthenticated: true,
+            role: "voter",
+            lastLogin: new Date(userStatus.updatedAt),
+            hasVoted: userStatus.hasVoted,
+          };
+
+          dispatch({ type: "LOGIN_SUCCESS", payload: restoredUser });
+          console.log("✅ Usuario restaurado exitosamente:", restoredUser.name);
         }
-      } catch (e) {
-        console.error("❌ Error al parsear usuario desde localStorage:", e);
-        localStorage.removeItem("authUser");
+      } catch (error) {
+        console.error("❌ Error al restaurar usuario:", error);
+        // Token inválido o expirado, limpiar
+        localStorage.removeItem("authToken");
       } finally {
         dispatch({ type: "INITIALIZE_COMPLETE" });
       }
@@ -255,7 +347,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
     restoreUser();
   }, []);
 
-  // Validación de credenciales
+  // Validación de credenciales (mantenemos la validación del frontend)
   const validateCredentials = useCallback(
     (dni: string, password: string): ValidationResult => {
       const errors: string[] = [];
@@ -268,14 +360,8 @@ export function VotingProvider({ children }: VotingProviderProps) {
         errors.push("El DNI solo debe contener números");
       }
 
-      if (!password || password.length < 8) {
-        errors.push("La contraseña debe tener al menos 8 caracteres");
-      }
-
-      if (password && !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
-        errors.push(
-          "La contraseña debe contener al menos una mayúscula, una minúscula y un número"
-        );
+      if (!password || password.length < 6) {
+        errors.push("La contraseña debe tener al menos 6 caracteres");
       }
 
       return {
@@ -324,44 +410,26 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Simular llamada backend
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Llamada al backend
+      const response = await apiRequest("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ dni, password, name, email }),
+      });
 
-      // Verificar usuarios existentes
-      const users: AuthUser[] = JSON.parse(
-        localStorage.getItem("users") || "[]"
-      );
+      // Guardar token
+      localStorage.setItem("authToken", response.token);
 
-      const dniExists = users.some((user) => user.dni === dni);
-
-      if (dniExists) {
-        dispatch({
-          type: "SET_ERROR",
-          payload: "El DNI ya está registrado",
-        });
-        return false;
-      }
-
-      // Crear nuevo usuario
+      // Crear objeto de usuario
       const newUser: AuthUser = {
-        id: parseInt(dni.slice(-4)),
-        name,
-        email,
-        dni,
+        id: response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+        dni: response.user.dni,
         isAuthenticated: true,
         role: "voter",
         lastLogin: new Date(),
+        hasVoted: response.user.hasVoted,
       };
-
-      // Guardar usuario
-      users.push(newUser);
-      localStorage.setItem("users", JSON.stringify(users));
-
-      try {
-        localStorage.setItem("authUser", JSON.stringify(newUser));
-      } catch (e) {
-        console.error("Error al guardar en localStorage:", e);
-      }
 
       dispatch({ type: "REGISTER_SUCCESS", payload: newUser });
       console.log("✅ Registro exitoso:", newUser);
@@ -371,7 +439,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
       console.error("Error en registro:", error);
       dispatch({
         type: "SET_ERROR",
-        payload: "Error de conexión. Verifique su conexión a internet.",
+        payload: handleApiError(error),
       });
       return false;
     } finally {
@@ -395,60 +463,37 @@ export function VotingProvider({ children }: VotingProviderProps) {
         return false;
       }
 
-      // Simular llamada al backend
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Llamada al backend
+      const response = await apiRequest("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ dni, password }),
+      });
 
-      // Recuperar usuarios
-      const users: AuthUser[] = JSON.parse(
-        localStorage.getItem("users") || "[]"
-      );
+      // Guardar token
+      localStorage.setItem("authToken", response.token);
 
-      const foundUser = users.find((user) => user.dni === dni);
+      // Crear objeto de usuario
+      const loggedUser: AuthUser = {
+        id: response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+        dni: response.user.dni,
+        isAuthenticated: true,
+        role: "voter",
+        lastLogin: new Date(),
+        hasVoted: response.user.hasVoted,
+      };
 
-      if (!foundUser) {
-        dispatch({
-          type: "SET_ERROR",
-          payload:
-            "Credenciales incorrectas o usuario no autorizado para votar",
-        });
-        dispatch({ type: "INCREMENT_ATTEMPTS" });
-        return false;
-      }
-
-      // Actualizar usuario
-      foundUser.lastLogin = new Date();
-      foundUser.isAuthenticated = true;
-
-      const updatedUsers = users.map((u) => (u.dni === dni ? foundUser : u));
-      localStorage.setItem("users", JSON.stringify(updatedUsers));
-
-      try {
-        localStorage.setItem("authUser", JSON.stringify(foundUser));
-      } catch (e) {
-        console.error("Error al guardar en localStorage:", e);
-        dispatch({
-          type: "SET_ERROR",
-          payload: "Error al guardar la sesión. Intente nuevamente.",
-        });
-        return false;
-      }
-
-      dispatch({ type: "LOGIN_SUCCESS", payload: foundUser });
-
-      // Simular si ya votó (30%)
-      const hasAlreadyVoted = Math.random() < 0.3;
-      if (hasAlreadyVoted) {
-        dispatch({ type: "VOTE_SUCCESS" });
-      }
-
-      console.log("✅ Login exitoso:", foundUser);
+      dispatch({ type: "LOGIN_SUCCESS", payload: loggedUser });
+      console.log("✅ Login exitoso:", loggedUser);
       return true;
     } catch (error) {
       console.error("Error en login:", error);
       dispatch({
         type: "SET_ERROR",
-        payload: "Error de conexión. Verifique su conexión a internet.",
+        payload: handleApiError(error),
       });
+      dispatch({ type: "INCREMENT_ATTEMPTS" });
       return false;
     } finally {
       dispatch({ type: "SET_LOADING", payload: false });
@@ -457,7 +502,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
 
   const logout = useCallback(() => {
     try {
-      localStorage.removeItem("authUser");
+      localStorage.removeItem("authToken");
       dispatch({ type: "LOGOUT" });
       console.log("✅ Logout exitoso");
     } catch (e) {
@@ -521,32 +566,29 @@ export function VotingProvider({ children }: VotingProviderProps) {
     dispatch({ type: "VOTE_START" });
 
     try {
-      // Simular procesamiento de voto
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Llamada al backend para votar
+      await apiRequest("/voting/vote", {
+        method: "POST",
+        body: JSON.stringify({ candidateId }),
+      });
 
-      // Simulamos éxito del 95% del tiempo
-      if (Math.random() > 0.05) {
-        const newVote: Vote = {
-          id: Date.now(),
-          userId: state.user.id,
-          candidateId,
-          timestamp: new Date(),
-          sessionId: state.currentSession.id,
-          hash: `vote_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        };
+      const newVote: Vote = {
+        id: Date.now(),
+        userId: state.user.id,
+        candidateId,
+        timestamp: new Date(),
+        sessionId: state.currentSession.id,
+        hash: `vote_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      };
 
-        dispatch({ type: "VOTE_SUCCESS", payload: newVote });
-        console.log(`✅ Voto procesado exitosamente:`, newVote);
-        return true;
-      } else {
-        throw new Error("Error del servidor al procesar el voto");
-      }
+      dispatch({ type: "VOTE_SUCCESS", payload: newVote });
+      console.log(`✅ Voto procesado exitosamente:`, newVote);
+      return true;
     } catch (error) {
       console.error("Error al votar:", error);
       dispatch({
         type: "VOTE_ERROR",
-        payload:
-          "Error al procesar el voto. Por favor, intente nuevamente. Si el problema persiste, contacte al soporte técnico.",
+        payload: handleApiError(error),
       });
       dispatch({ type: "INCREMENT_ATTEMPTS" });
       return false;
@@ -567,9 +609,8 @@ export function VotingProvider({ children }: VotingProviderProps) {
     dispatch({ type: "CLEAR_ERROR" });
   }, []);
 
-  // 🔧 SOLUCIÓN: Verificar expiración de sesión solo cuando todo esté inicializado
+  // Verificar expiración de sesión
   useEffect(() => {
-    // Solo ejecutar si tenemos usuario, sesión y está inicializado
     if (!state.user || !state.currentSession || !state.isInitialized) {
       return;
     }
@@ -587,7 +628,7 @@ export function VotingProvider({ children }: VotingProviderProps) {
       if (now > sessionEnd || !state.currentSession!.isActive) {
         console.log("⚠️ Sesión expirada o inactiva");
         dispatch({ type: "SESSION_EXPIRED" });
-        localStorage.removeItem("authUser");
+        localStorage.removeItem("authToken");
       } else {
         console.log(
           "✅ Sesión válida, tiempo restante:",
@@ -597,35 +638,10 @@ export function VotingProvider({ children }: VotingProviderProps) {
       }
     };
 
-    // Verificar inmediatamente
     checkSessionExpiry();
-
-    // Verificar cada 5 minutos (más eficiente)
     const interval = setInterval(checkSessionExpiry, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [state.user, state.currentSession, state.isInitialized]);
-
-  // 🔧 Verificar integridad del localStorage - Solo cuando pierde el foco
-  useEffect(() => {
-    if (!state.user || !state.isInitialized) return;
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        // Cuando la app recupera el foco
-        const storedUser = localStorage.getItem("authUser");
-        if (!storedUser && state.user) {
-          console.log("⚠️ Usuario perdido en localStorage, cerrando sesión");
-          dispatch({ type: "LOGOUT" });
-        }
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [state.user, state.isInitialized]);
 
   const contextValue: VotingContextType = {
     user: state.user,

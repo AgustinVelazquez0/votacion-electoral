@@ -3,34 +3,6 @@ import { useVoting } from "../hooks/useVoting";
 import type { VotingResults, CandidateResult } from "../types";
 import styles from "../styles/Results.module.css";
 
-// Mock data para resultados (después vendrá del backend)
-const mockResults: VotingResults = {
-  totalVotes: 15420,
-  participationRate: 68.5,
-  isFinalized: false,
-  lastUpdated: new Date(),
-  candidateResults: [
-    {
-      candidateId: 1,
-      candidateName: "María González",
-      votes: 6840,
-      percentage: 44.36,
-    },
-    {
-      candidateId: 2,
-      candidateName: "Carlos Rodríguez",
-      votes: 5580,
-      percentage: 36.18,
-    },
-    {
-      candidateId: 3,
-      candidateName: "Ana Martínez",
-      votes: 3000,
-      percentage: 19.46,
-    },
-  ],
-};
-
 const Results: React.FC = () => {
   const [results, setResults] = useState<VotingResults | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,14 +10,24 @@ const Results: React.FC = () => {
 
   const { currentSession, user } = useVoting();
 
-  // Simular carga de resultados
-  useEffect(() => {
-    const loadResults = async () => {
-      setIsLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setResults(mockResults);
+  const loadResults = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("http://localhost:3000/api/voting/results");
+      if (!response.ok) {
+        throw new Error("Error al obtener los resultados");
+      }
+      const data: VotingResults = await response.json();
+      setResults(data);
+    } catch (error) {
+      console.error("Error cargando resultados:", error);
+      setResults(null);
+    } finally {
       setIsLoading(false);
-    };
+    }
+  };
+
+  useEffect(() => {
     loadResults();
   }, []);
 
@@ -54,25 +36,7 @@ const Results: React.FC = () => {
     if (!autoRefresh || !results || results.isFinalized) return;
 
     const interval = setInterval(() => {
-      setResults((prev) => {
-        if (!prev) return prev;
-        const increment = Math.floor(Math.random() * 50) + 10;
-        const newTotal = prev.totalVotes + increment;
-
-        return {
-          ...prev,
-          totalVotes: newTotal,
-          candidateResults: prev.candidateResults.map((candidate) => {
-            const newVotes =
-              candidate.votes + Math.floor(Math.random() * 20) + 5;
-            return {
-              ...candidate,
-              votes: newVotes,
-              percentage: (newVotes / newTotal) * 100,
-            };
-          }),
-        };
-      });
+      loadResults();
     }, 30000);
 
     return () => clearInterval(interval);
@@ -81,7 +45,12 @@ const Results: React.FC = () => {
   const formatNumber = (num: number): string => num.toLocaleString("es-ES");
 
   const getWinner = (): CandidateResult | null => {
-    if (!results || !results.isFinalized) return null;
+    if (
+      !results ||
+      !results.isFinalized ||
+      !Array.isArray(results.candidateResults)
+    )
+      return null;
     return results.candidateResults.reduce((prev, current) =>
       prev.percentage > current.percentage ? prev : current
     );
@@ -116,9 +85,11 @@ const Results: React.FC = () => {
   }
 
   const winner = getWinner();
-  const sortedResults = [...results.candidateResults].sort(
-    (a, b) => b.percentage - a.percentage
-  );
+
+  // Validamos que candidateResults sea un array antes de usar sort
+  const sortedResults = Array.isArray(results.candidateResults)
+    ? [...results.candidateResults].sort((a, b) => b.percentage - a.percentage)
+    : [];
 
   return (
     <div className={styles.container}>
@@ -138,7 +109,9 @@ const Results: React.FC = () => {
         </div>
         <div className={styles.statusBox}>
           <h3 className={styles.participationRate}>
-            {results.participationRate.toFixed(1)}%
+            {results.participationRate != null
+              ? results.participationRate.toFixed(1) + "%"
+              : "N/A"}
           </h3>
           <p style={{ color: "#666", margin: "0.5rem 0 0 0" }}>Participación</p>
         </div>

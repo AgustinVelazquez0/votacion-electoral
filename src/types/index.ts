@@ -69,6 +69,7 @@ export interface AuthUser {
   // Agregar permisos específicos
   permissions?: string[];
   lastLogin?: Date;
+  hasVoted?: boolean;
 }
 
 // Nuevos tipos para registro
