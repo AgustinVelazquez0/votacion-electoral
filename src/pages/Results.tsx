@@ -46,7 +46,7 @@ const Results: React.FC = () => {
           (candidate) => ({
             candidateId: candidate.id,
             candidateName: candidate.name,
-            votes: 0,
+            proposals: 0,
             percentage: 0,
           })
         );
@@ -70,7 +70,7 @@ const Results: React.FC = () => {
           (candidate) => ({
             candidateId: candidate.id,
             candidateName: candidate.name,
-            votes: 0,
+            proposals: 0,
             percentage: 0,
           })
         );
@@ -236,7 +236,8 @@ const Results: React.FC = () => {
           <h2 className={styles.winnerTitle}>🏆 Candidato Ganador</h2>
           <h3 className={styles.winnerName}>{winner.candidateName}</h3>
           <p className={styles.winnerVotes}>
-            {formatNumber(winner.votes)} votos ({winner.percentage.toFixed(2)}%)
+            {formatNumber(winner.proposals)} votos (
+            {winner.percentage.toFixed(2)}%)
           </p>
         </div>
       )}
@@ -315,7 +316,7 @@ const Results: React.FC = () => {
 
                   <div className={styles.votesPercentageContainer}>
                     <span className={styles.votes}>
-                      {formatNumber(candidate.votes)} votos
+                      {formatNumber(candidate.proposals)} votos
                     </span>
                     <span className={styles.percentage}>
                       {candidate.percentage.toFixed(2)}%

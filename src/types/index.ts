@@ -55,7 +55,7 @@ export interface VotingResults {
 export interface CandidateResult {
   candidateId: number;
   candidateName: string;
-  votes: number;
+  proposals: number;
   percentage: number;
 }
 
