@@ -1,11 +1,13 @@
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { useVoting } from "../hooks/useVoting";
 import styles from "../styles/Home.module.css";
 
 function Home() {
-  const { user, candidates, votes, hasUserVoted } = useVoting();
+  const { user, candidates, hasUserVoted } = useVoting();
+  const [totalVotes, setTotalVotes] = useState(0);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  const totalVotes = votes.length;
   const userHasVoted = hasUserVoted(user?.id?.toString());
 
   const estimatedTotalVoters = 1000;
@@ -13,6 +15,30 @@ function Home() {
     totalVotes > 0
       ? ((totalVotes / estimatedTotalVoters) * 100).toFixed(1)
       : "0";
+
+  // Método para formatear números igual que en Results.tsx
+  const formatNumber = (num: number): string => num.toLocaleString("es-ES");
+
+  // Cargar estadísticas reales desde el backend
+  const loadStats = async () => {
+    setIsLoadingStats(true);
+    try {
+      const response = await fetch("http://localhost:3000/api/voting/results");
+      if (response.ok) {
+        const data = await response.json();
+        setTotalVotes(data.totalVotes || 0);
+      }
+    } catch (error) {
+      console.error("Error cargando estadísticas:", error);
+      setTotalVotes(0);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStats();
+  }, []);
 
   return (
     <div className={styles.container}>
@@ -86,13 +112,17 @@ function Home() {
       {/* Estadísticas rápidas */}
       <div className={styles.gridStats}>
         <div className={styles.statCard}>
-          <div className={styles.statNumberBlue}>{candidates.length}</div>
+          <div className={styles.statNumberBlue}>
+            {formatNumber(candidates.length)}
+          </div>
           <div className={styles.statLabel}>Candidatos</div>
           <div className={styles.statDesc}>Registrados en el sistema</div>
         </div>
 
         <div className={styles.statCard}>
-          <div className={styles.statNumberGreen}>{totalVotes}</div>
+          <div className={styles.statNumberGreen}>
+            {isLoadingStats ? "..." : formatNumber(totalVotes)}
+          </div>
           <div className={styles.statLabel}>Votos Emitidos</div>
           <div className={styles.statDesc}>Total de participantes</div>
         </div>
